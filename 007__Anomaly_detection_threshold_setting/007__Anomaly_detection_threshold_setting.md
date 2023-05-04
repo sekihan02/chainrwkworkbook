@@ -1169,17 +1169,6 @@ print('New Threshold:', new_threshold)
     New Threshold: 727.0241094118405
 
 
-
-```python
-time_prot(valid_df, new_threshold, lebel_name='new_threshold', color='darkred', title='Time Series of data used for Validation')
-```
-
-
-    
-![png](output_50_0.png)
-    
-
-
 ## 簡易分析の結果
 
 
@@ -1189,6 +1178,17 @@ print(f'四分位範囲外データを除外し、そのデータの半分であ
 ```
 
     四分位範囲外データを除外し、そのデータの半分である448行を学習データとして使用して、簡易的に閾値を作成しました。
+
+
+
+```python
+time_prot(valid_df, new_threshold, lebel_name='new_threshold', color='darkred', title='Time Series of data used for Validation')
+```
+
+
+    
+![png](output_52_0.png)
+    
 
 
 
