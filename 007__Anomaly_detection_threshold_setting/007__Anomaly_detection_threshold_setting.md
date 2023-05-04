@@ -3,16 +3,42 @@
 - 問題：分析実装後のアラームの再設定検討や仕組みを理解するための時間が増え作業負荷が増大したように感じる
 - 課題：アラームに対して次のアプローチを考えることが(時間がかかったり技術が無く)難しい
 
-- 事前に入力として現在設定している閾値を持っていることとする。
+※ 事前に入力として現在設定している閾値を持っていることとする。
 
 - アラーム発生からそれ以前のデータを収集し、データ分布や時系列での状況を可視化+GPTでデータの概要を生成する。(○○に発生したアラームではHTTPステータス○○のエラーが発生し、処理が正常終了しなかったためアラームが発生しました。このアラームの直前には○○が起きており、このアラームより前のデータ○○個のデータをみると...)
 - アラーム発生からそれ以前のデータを使い簡易的な分析を実施、新しい閾値の提案とその場合データはどのように読み取ることができるようになるのかを現状と比較しての概要説明をGPTモデルで生成する
     - 閾値設定用の分析は、取得データの分布95%のデータを正常とし、5%を異常とする形でHold Out法で教師なしで分析を実施する。時系列を考慮したARIMAでの分析もしたいな
 
 あたかもGPTモデルがデータの説明・可視化、閾値の再設定案の提示まで自動でやってくれる感じにしたい<br>
-入出力のあいまいさを許しつつ出力の曖昧さはルールで補う漢字で
+入出力のあいまいさを許しつつ出力の曖昧さはルールで補う形でプロンプトを作成する
 
 - アラームに対して次のアプローチを提示するためアラーム発報時のデータの重要度の高いトークンをいくつか抽出(HTTPステータスが抽出されるイメージ)し、ReActでDBまたはネットからトークンに関連する情報をもとに次のアプローチを生成する
+
+
+```python
+!pip install japanize-matplotlib
+```
+
+    Requirement already satisfied: japanize-matplotlib in /usr/local/lib/python3.10/dist-packages (1.1.3)
+    Requirement already satisfied: matplotlib in /usr/local/lib/python3.10/dist-packages (from japanize-matplotlib) (3.7.1)
+    Requirement already satisfied: contourpy>=1.0.1 in /usr/local/lib/python3.10/dist-packages (from matplotlib->japanize-matplotlib) (1.0.7)
+    Requirement already satisfied: cycler>=0.10 in /usr/local/lib/python3.10/dist-packages (from matplotlib->japanize-matplotlib) (0.11.0)
+    Requirement already satisfied: fonttools>=4.22.0 in /usr/local/lib/python3.10/dist-packages (from matplotlib->japanize-matplotlib) (4.39.3)
+    Requirement already satisfied: kiwisolver>=1.0.1 in /usr/local/lib/python3.10/dist-packages (from matplotlib->japanize-matplotlib) (1.4.4)
+    Requirement already satisfied: numpy>=1.20 in /usr/local/lib/python3.10/dist-packages (from matplotlib->japanize-matplotlib) (1.23.5)
+    Requirement already satisfied: packaging>=20.0 in /usr/local/lib/python3.10/dist-packages (from matplotlib->japanize-matplotlib) (23.1)
+    Requirement already satisfied: pillow>=6.2.0 in /usr/local/lib/python3.10/dist-packages (from matplotlib->japanize-matplotlib) (9.5.0)
+    Requirement already satisfied: pyparsing>=2.3.1 in /usr/lib/python3/dist-packages (from matplotlib->japanize-matplotlib) (2.4.7)
+    Requirement already satisfied: python-dateutil>=2.7 in /usr/local/lib/python3.10/dist-packages (from matplotlib->japanize-matplotlib) (2.8.2)
+    Requirement already satisfied: six>=1.5 in /usr/lib/python3/dist-packages (from python-dateutil>=2.7->matplotlib->japanize-matplotlib) (1.16.0)
+    [33mWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv[0m[33m
+    [0m
+
+
+```python
+# アラーム前まで仮定で設定している閾値(現在設定中の閾値)
+threshold = 1000
+```
 
 
 ```python
@@ -66,6 +92,9 @@ class Timer:
 
 
 ```python
+import warnings
+warnings.filterwarnings('ignore')
+
 import gc
 gc.collect()
 ```
@@ -76,12 +105,6 @@ gc.collect()
     257
 
 
-
-
-```python
-# アラーム前まで仮定で設定している閾値(現在設定中の閾値)
-threshold = 1000
-```
 
 ## 疑似データの作成
 
@@ -194,9 +217,18 @@ df.head()
 
 
 
+## データ概要可視化
+
+
+```python
+start_time = time()
+```
+
 
 ```python
 import matplotlib.pyplot as plt
+import japanize_matplotlib
+
 import seaborn as sns
 plt.style.use('fivethirtyeight')
 
@@ -213,7 +245,9 @@ def plot_count(feature, title, df, size=1):
     # 最大20カラムをヒストグラムで表示
 #     g = sns.countplot(data=df, x = feature, order = df[feature].value_counts().index[:20], palette='Set3')
     g = sns.countplot(data=df, y = feature, order = df[feature].value_counts().index[:10], palette='Set3')
-    g.set_title("Number and percentage of {}".format(title))
+    # g.set_title("Number and percentage of {}".format(title))
+    g.set_title("{}の割合".format(title))
+    
 #     if(size > 2):
         # サイズ2以上の時、行名を90°回転し、表示
 #         plt.xticks(rotation=90, size=8)
@@ -241,7 +275,7 @@ plot_count(feature='status_code', title='status_code', df=df, size=3.5)
 
 
     
-![png](output_8_0.png)
+![png](output_11_0.png)
     
 
 
@@ -281,10 +315,9 @@ print(f'Number of all data: {df.shape[0]}')
 import matplotlib.dates as mdates
 
 # 時系列可視化
-def time_prot(df, threshold=0, lebel_name='threshold', color='darkblue', title='Response Time Time Series'):
+def time_prot(df, threshold=0, lebel_name='threshold', color='darkblue', title='response_time の時系列推移'):
     fig, ax = plt.subplots(1,1, figsize=(4*3.2,4))
     ax.plot(df['date_time'], df['response_time'], marker='o', color='lightskyblue')
-
 
     # response_timeが800以上のデータのstatus_codeを表示
     for index, row in df.iterrows():
@@ -296,7 +329,8 @@ def time_prot(df, threshold=0, lebel_name='threshold', color='darkblue', title='
     # x軸の設定
     # ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M'))
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
-    plt.xticks(rotation=45)
+    # plt.xticks(rotation=45)
+    plt.xticks(rotation=25)
 
     # 閾値の表示
     if threshold != 0:
@@ -320,7 +354,7 @@ time_prot(df, threshold)
 
 
     
-![png](output_12_0.png)
+![png](output_15_0.png)
     
 
 
@@ -699,7 +733,10 @@ def res_plot_count(feature, title, df, size=1):
     # 最大20カラムをヒストグラムで表示
 #     g = sns.countplot(data=df, x = feature, order = df[feature].value_counts().index[:20], palette='Set3')
     g = sns.countplot(data=df, y = feature, order = df[feature].value_counts().index[:10], palette='Set3')
-    g.set_title("Setting Anomaly Data\nNumber and percentage of {}".format(title), size=16)
+    # g.set_title("Setting Anomaly Data\nNumber and percentage of {}".format(title), size=16)
+    g.set_title("異常として分類される {} の数と割合".format(title), size=16)
+    
+    
 #     if(size > 2):
         # サイズ2以上の時、行名を90°回転し、表示
 #         plt.xticks(rotation=90, size=8)
@@ -711,9 +748,9 @@ def res_plot_count(feature, title, df, size=1):
 #                 height + 3,
 #                 '{:1.2f}%'.format(100*height/total),
 #                 ha="center")
-        ax.text(width + 0.36,
-                p.get_y()+p.get_height()+.025/2.,
-                f'Number of data: {width}\nRatio: '+'{:1.2f}%'.format(100*width/total),
+        ax.text(width - 0.05,
+                p.get_y()+p.get_height()-.05,
+                f'Amount of data: {width}\nRatio: '+'{:1.2f}%'.format(100*width/total),
                 ha="right") 
     plt.tight_layout()
     plt.show()
@@ -727,7 +764,7 @@ res_plot_count(feature='status_code', title='status_code', df=df[df['response_ti
 
 
     
-![png](output_15_0.png)
+![png](output_18_0.png)
     
 
 
@@ -757,7 +794,24 @@ print(f'Number of Anomaly data: {anomaly_num}')
     Number of Anomaly data: 53
 
 
+
+```python
+# 概要可視化出力の処理時間
+end_time = time()
+
+elapsed_time = end_time - start_time
+print(f"概要可視化出力の処理時間: {elapsed_time}秒")
+```
+
+    概要可視化出力の処理時間: 1.070552110671997秒
+
+
 # 簡易分析の実施
+
+
+```python
+start_time = time()
+```
 
 ## 分析の前に目的変数の正規性の確認
 
@@ -809,8 +863,8 @@ def plot_dist3(df, feature, title):
     ax1.axvline(df.loc[:, feature].mean(), color='darkblue', linestyle='dashed', linewidth=3)
     min_ylim, max_ylim = plt.ylim()
     # 平均値の表示
-    # ax1.text(df.loc[:, feature].mean()*1.95, max_ylim*0.95, 'Mean: {:.2f}'.format(df.loc[:, feature].mean()), color='Black', fontsize='12',
-    #          bbox=dict(boxstyle='round',facecolor='darkorange', alpha=0.5))
+    ax1.text(df.loc[:, feature].mean()*1.05, max_ylim*0.85, 'Mean: {:.2f}'.format(df.loc[:, feature].mean()), color='Black', fontsize='12',
+             bbox=dict(boxstyle='round',facecolor='darkorange', alpha=0.5))
     ax1.legend(labels=['Actual','Normal'])
     ax1.xaxis.set_major_locator(MaxNLocator(nbins=24))
 
@@ -840,7 +894,7 @@ plot_dist3(df, 'response_time', 'Readability Score Distribution')
 
 
     
-![png](output_22_0.png)
+![png](output_27_0.png)
     
 
 
@@ -852,7 +906,7 @@ plot_dist3(df[df['response_time'] < threshold], 'response_time', 'Below Threshol
 
 
     
-![png](output_23_0.png)
+![png](output_28_0.png)
     
 
 
@@ -864,7 +918,7 @@ plot_dist3(df[df['response_time'] < 800], 'response_time', 'Generation Threshold
 
 
     
-![png](output_24_0.png)
+![png](output_29_0.png)
     
 
 
@@ -1001,23 +1055,23 @@ df.shape, df_out.shape, df_in.shape
 
 
 ```python
-plot_dist3(df_out, 'response_time', 'Remove Outlier data Readability Score Distribution')
+plot_dist3(df_out, 'response_time', '目的変数のデータ分布')
 ```
 
 
     
-![png](output_33_0.png)
+![png](output_38_0.png)
     
 
 
 
 ```python
-time_prot(df_out, title='Time Series of data used for training')
+time_prot(df_out, title='学習に使用する response_time の時系列データの推移')
 ```
 
 
     
-![png](output_34_0.png)
+![png](output_39_0.png)
     
 
 
@@ -1055,37 +1109,46 @@ train_df.shape, valid_df.shape
 
 
 ```python
+start_time = time()
+```
+
+
+```python
 from sklearn.neighbors import LocalOutlierFactor
 ```
 
 
 ```python
-# 近傍数を設定してLOFをインスタンス化
-lof = LocalOutlierFactor(n_neighbors=8, novelty=True, contamination='auto')
-lof.fit(train_df.drop(['date_time', 'status_code'], axis=1))
+# LOFの近傍数kを変化させて検証用データに対する予測結果を取得(
+preds = []
+for k in range(1,11):
+    with Timer(prefix=f'n_neighbors k={k}'):
+        # 近傍数を設定してLOFをインスタンス化
+        lof = LocalOutlierFactor(n_neighbors=k, novelty=True, contamination='auto')
+        lof.fit(train_df.drop(['date_time', 'status_code'], axis=1))
+        pred = lof._predict(valid_df.drop(['date_time', 'status_code'], axis=1))
+        
+        preds.append(pred)
 ```
 
-
-
-
-<style>#sk-container-id-1 {color: black;background-color: white;}#sk-container-id-1 pre{padding: 0;}#sk-container-id-1 div.sk-toggleable {background-color: white;}#sk-container-id-1 label.sk-toggleable__label {cursor: pointer;display: block;width: 100%;margin-bottom: 0;padding: 0.3em;box-sizing: border-box;text-align: center;}#sk-container-id-1 label.sk-toggleable__label-arrow:before {content: "▸";float: left;margin-right: 0.25em;color: #696969;}#sk-container-id-1 label.sk-toggleable__label-arrow:hover:before {color: black;}#sk-container-id-1 div.sk-estimator:hover label.sk-toggleable__label-arrow:before {color: black;}#sk-container-id-1 div.sk-toggleable__content {max-height: 0;max-width: 0;overflow: hidden;text-align: left;background-color: #f0f8ff;}#sk-container-id-1 div.sk-toggleable__content pre {margin: 0.2em;color: black;border-radius: 0.25em;background-color: #f0f8ff;}#sk-container-id-1 input.sk-toggleable__control:checked~div.sk-toggleable__content {max-height: 200px;max-width: 100%;overflow: auto;}#sk-container-id-1 input.sk-toggleable__control:checked~label.sk-toggleable__label-arrow:before {content: "▾";}#sk-container-id-1 div.sk-estimator input.sk-toggleable__control:checked~label.sk-toggleable__label {background-color: #d4ebff;}#sk-container-id-1 div.sk-label input.sk-toggleable__control:checked~label.sk-toggleable__label {background-color: #d4ebff;}#sk-container-id-1 input.sk-hidden--visually {border: 0;clip: rect(1px 1px 1px 1px);clip: rect(1px, 1px, 1px, 1px);height: 1px;margin: -1px;overflow: hidden;padding: 0;position: absolute;width: 1px;}#sk-container-id-1 div.sk-estimator {font-family: monospace;background-color: #f0f8ff;border: 1px dotted black;border-radius: 0.25em;box-sizing: border-box;margin-bottom: 0.5em;}#sk-container-id-1 div.sk-estimator:hover {background-color: #d4ebff;}#sk-container-id-1 div.sk-parallel-item::after {content: "";width: 100%;border-bottom: 1px solid gray;flex-grow: 1;}#sk-container-id-1 div.sk-label:hover label.sk-toggleable__label {background-color: #d4ebff;}#sk-container-id-1 div.sk-serial::before {content: "";position: absolute;border-left: 1px solid gray;box-sizing: border-box;top: 0;bottom: 0;left: 50%;z-index: 0;}#sk-container-id-1 div.sk-serial {display: flex;flex-direction: column;align-items: center;background-color: white;padding-right: 0.2em;padding-left: 0.2em;position: relative;}#sk-container-id-1 div.sk-item {position: relative;z-index: 1;}#sk-container-id-1 div.sk-parallel {display: flex;align-items: stretch;justify-content: center;background-color: white;position: relative;}#sk-container-id-1 div.sk-item::before, #sk-container-id-1 div.sk-parallel-item::before {content: "";position: absolute;border-left: 1px solid gray;box-sizing: border-box;top: 0;bottom: 0;left: 50%;z-index: -1;}#sk-container-id-1 div.sk-parallel-item {display: flex;flex-direction: column;z-index: 1;position: relative;background-color: white;}#sk-container-id-1 div.sk-parallel-item:first-child::after {align-self: flex-end;width: 50%;}#sk-container-id-1 div.sk-parallel-item:last-child::after {align-self: flex-start;width: 50%;}#sk-container-id-1 div.sk-parallel-item:only-child::after {width: 0;}#sk-container-id-1 div.sk-dashed-wrapped {border: 1px dashed gray;margin: 0 0.4em 0.5em 0.4em;box-sizing: border-box;padding-bottom: 0.4em;background-color: white;}#sk-container-id-1 div.sk-label label {font-family: monospace;font-weight: bold;display: inline-block;line-height: 1.2em;}#sk-container-id-1 div.sk-label-container {text-align: center;}#sk-container-id-1 div.sk-container {/* jupyter's `normalize.less` sets `[hidden] { display: none; }` but bootstrap.min.css set `[hidden] { display: none !important; }` so we also need the `!important` here to be able to override the default hidden behavior on the sphinx rendered scikit-learn.org. See: https://github.com/scikit-learn/scikit-learn/issues/21755 */display: inline-block !important;position: relative;}#sk-container-id-1 div.sk-text-repr-fallback {display: none;}</style><div id="sk-container-id-1" class="sk-top-container"><div class="sk-text-repr-fallback"><pre>LocalOutlierFactor(n_neighbors=8, novelty=True)</pre><b>In a Jupyter environment, please rerun this cell to show the HTML representation or trust the notebook. <br />On GitHub, the HTML representation is unable to render, please try loading this page with nbviewer.org.</b></div><div class="sk-container" hidden><div class="sk-item"><div class="sk-estimator sk-toggleable"><input class="sk-toggleable__control sk-hidden--visually" id="sk-estimator-id-1" type="checkbox" checked><label for="sk-estimator-id-1" class="sk-toggleable__label sk-toggleable__label-arrow">LocalOutlierFactor</label><div class="sk-toggleable__content"><pre>LocalOutlierFactor(n_neighbors=8, novelty=True)</pre></div></div></div></div></div>
-
+    n_neighbors k=1 0.004[s]
+    n_neighbors k=2 0.004[s]
+    n_neighbors k=3 0.003[s]
+    n_neighbors k=4 0.005[s]
+    n_neighbors k=5 0.004[s]
+    n_neighbors k=6 0.003[s]
+    n_neighbors k=7 0.003[s]
+    n_neighbors k=8 0.003[s]
+    n_neighbors k=9 0.004[s]
+    n_neighbors k=10 0.003[s]
 
 
 
 ```python
-pred = lof._predict(valid_df.drop(['date_time', 'status_code'], axis=1))
-```
-
-    /usr/local/lib/python3.10/dist-packages/sklearn/base.py:439: UserWarning: X does not have valid feature names, but LocalOutlierFactor was fitted with feature names
-      warnings.warn(
-
-
-
-```python
-# lof_grids = lof.decision_function(valid_df.drop(['date_time', 'status_code'], axis=1))
-# lof_grids = lof_grids.reshape(xx.shape)
-# lof_grids
+# 予測結果の平均をとり、0以上なら1(正常)、以下なら-1(異常)に設定
+pred = np.mean(preds, axis=0)
+pred[pred >= 0] = 1
+pred[pred < 0] = -1
 ```
 
 
@@ -1095,12 +1158,12 @@ valid_df['judgment'] = pred
 
 
 ```python
-time_prot(valid_df, title='Time Series of data used for Validation')
+time_prot(valid_df, title='検証に使用する response_time の時系列データの推移')
 ```
 
 
     
-![png](output_44_0.png)
+![png](output_49_0.png)
     
 
 
@@ -1113,8 +1176,8 @@ valid_df['judgment'].value_counts()
 
 
     judgment
-     1    401
-    -1    151
+     1.0    408
+    -1.0    144
     Name: count, dtype: int64
 
 
@@ -1137,7 +1200,7 @@ pred_anomaly_df['judgment'].value_counts()
 
 
     judgment
-    -1    151
+    -1.0    144
     Name: count, dtype: int64
 
 
@@ -1148,9 +1211,9 @@ pred_anomaly_df['judgment'].value_counts()
 w_500 = 1.5
 w_503 = 1.2
 
-pred_anomaly_df['weights'] = 1
-pred_anomaly_df.loc[pred_anomaly_df['status_code'] == 500, 'weights'] = w_500
-pred_anomaly_df.loc[pred_anomaly_df['status_code'] == 503, 'weights'] = w_503
+pred_anomaly_df['weights'] = 1.0
+pred_anomaly_df.loc[pred_anomaly_df['status_code'] == '500', 'weights'] = w_500
+pred_anomaly_df.loc[pred_anomaly_df['status_code'] == '503', 'weights'] = w_503
 
 weighted_mean = (pred_anomaly_df['response_time'] * pred_anomaly_df['weights']).sum() / pred_anomaly_df['weights'].sum()
 simple_mean = pred_anomaly_df['response_time'].mean()
@@ -1164,9 +1227,9 @@ new_threshold = weighted_mean
 print('New Threshold:', new_threshold)
 ```
 
-    Weighted Mean: 727.0241094118405
-    Simple Mean:   727.0241094118405
-    New Threshold: 727.0241094118405
+    Weighted Mean: 781.3846612433357
+    Simple Mean:   753.3878771255627
+    New Threshold: 781.3846612433357
 
 
 ## 簡易分析の結果
@@ -1174,55 +1237,92 @@ print('New Threshold:', new_threshold)
 
 ```python
 # GPTが生成した文章の前に付ける文章例
-print(f'四分位範囲外データを除外し、そのデータの半分である{half_len}行を学習データとして使用して、簡易的に閾値を作成しました。')
+print(f'簡易的に分析を行い、再設定する場合の閾値を考えました。\n以下のアラーム発報時のデータから四分位範囲外を除外した結果を正常であると仮定し、そのデータの半分である{half_len}行を学習データとして使用しています。')
 ```
 
-    四分位範囲外データを除外し、そのデータの半分である448行を学習データとして使用して、簡易的に閾値を作成しました。
+    簡易的に分析を行い、再設定する場合の閾値を考えました。
+    以下のアラーム発報時のデータから四分位範囲外を除外した結果を正常であると仮定し、そのデータの半分である448行を学習データとして使用しています。
 
 
 
 ```python
-time_prot(valid_df, new_threshold, lebel_name='new_threshold', color='darkred', title='Time Series of data used for Validation')
+# 全データでの正規性の確認
+plot_dist3(df, 'response_time', '目的変数のデータ分布')
 ```
 
 
     
-![png](output_52_0.png)
+![png](output_57_0.png)
+    
+
+
+
+```python
+time_prot(train_df, title='学習に使用した response_time の時系列推移')
+```
+
+
+    
+![png](output_58_0.png)
+    
+
+
+
+```python
+time_prot(valid_df, new_threshold, lebel_name='new_threshold', color='darkred', title='学習には使用せず閾値設定時にのみ使用した response_time の時系列推移')
+```
+
+
+    
+![png](output_59_0.png)
     
 
 
 
 ```python
 # GPTが生成した文章の前に付ける文章例
-print(f'閾値の作成はLOFによる分析を行い、異常と分類したデータの中でHTTPステータスが500または503である場合は重みを付与し加重平均を算出した結果を新しい閾値としています。\n新しい閾値:{new_threshold}\n新しい閾値を設定した場合の可視化結果は以下となります。')
+print(f'閾値の作成にはLOFを使用し、推論では近傍数kを1～10までそれぞれ変えたときの結果の平均を設定しています。\n提案したい閾値は、異常と分類されたデータの中でHTTPステータスが500または503である場合に重みを付与し、加重平均を算出した結果です。\n・新しい閾値:{new_threshold}\n新しい閾値を設定した場合の可視化結果は以下となります。')
 ```
 
-    閾値の作成はLOFによる分析を行い、異常と分類したデータの中でHTTPステータスが500または503である場合は重みを付与し加重平均を算出した結果を新しい閾値としています。
-    新しい閾値:727.0241094118405
+    閾値の作成にはLOFを使用し、推論では近傍数kを1～10までそれぞれ変えたときの結果の平均を設定しています。
+    提案したい閾値は、異常と分類されたデータの中でHTTPステータスが500または503である場合に重みを付与し、加重平均を算出した結果です。
+    ・新しい閾値:781.3846612433357
     新しい閾値を設定した場合の可視化結果は以下となります。
 
 
 
 ```python
-time_prot(df, new_threshold, lebel_name='new_threshold', color='darkred', title='Time Series of data used for all data')
+time_prot(df, new_threshold, lebel_name='new_threshold', color='darkred', title='新しい閾値を設定した場合の response_time の時系列推移')
 ```
 
 
     
-![png](output_54_0.png)
+![png](output_61_0.png)
     
 
 
 
 ```python
 # 新しい閾値を異常と分類した時の異常と分類したデータのstatus_codeの比率を確認する
-res_plot_count(feature='status_code', title='new_threshold', df=df[df['response_time'] >= new_threshold], size=0.32)
+res_plot_count(feature='status_code', title='status_code', df=df[df['response_time'] >= new_threshold], size=0.32)
 ```
 
 
     
-![png](output_55_0.png)
+![png](output_62_0.png)
     
+
+
+
+```python
+# すべての処理時間
+end_time = time()
+
+elapsed_time = end_time - start_time
+print(f"簡易分析の処理時間: {elapsed_time}秒")
+```
+
+    簡易分析の処理時間: 2.0428388118743896秒
 
 
 
