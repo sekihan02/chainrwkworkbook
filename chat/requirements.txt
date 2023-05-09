@@ -31,6 +31,3 @@ slack_sdk==3.21.0
 arxiv==1.4.4
 wikipedia
 einops
-packaging
-flash-attn==1.0.3.post0
-triton==2.0.0.dev20221202

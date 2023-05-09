@@ -45,7 +45,10 @@ WORKDIR /app
 
 COPY requirements.txt .
 RUN pip3 install --upgrade pip
+RUN pip3 install --no-cache-dir packaging
 RUN pip3 install --no-cache-dir -r requirements.txt
+RUN pip3 install flash-attn==1.0.3.post0
+RUN pip3 install triton==2.0.0.dev20221202
 COPY . .
 EXPOSE 5000
 CMD ["python", "app.py"]
