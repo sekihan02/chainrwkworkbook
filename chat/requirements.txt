@@ -1,6 +1,6 @@
 flask
+matplotlib==3.7.1
 seaborn
-matplotlib
 japanize-matplotlib
 scipy
 statsmodels
@@ -12,11 +12,11 @@ jupyter==1.0.0
 jupyterlab==3.5.2
 tabulate
 ptitprince
-matplotlib-venn
 datasets
 torch
 torchvision
-torchaudio --extra-index-url https://download.pytorch.org/whl/cu117
+torchaudio --index-url https://download.pytorch.org/whl/cpu
+sentencepiece
 transformers==4.28.1
 timm
 ipyplot
@@ -31,5 +31,6 @@ slack_sdk==3.21.0
 arxiv==1.4.4
 wikipedia
 einops
+packaging
 flash-attn==1.0.3.post0
 triton==2.0.0.dev20221202
