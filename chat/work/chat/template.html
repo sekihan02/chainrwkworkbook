@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chat</title>
+    <style>
+        body {
+            <!-- background-color: #F5F5F5; -->
+            background-color: #FFFFFF;
+            font-family: Arial, sans-serif;
+        }
+        .message-row {
+            margin-bottom: 8px;
+        }
+        .user-message {
+            background-color: #E5E5EA;
+            display: inline-block;
+            padding: 8px;
+            border-radius: 10px;
+            margin-bottom: 8px;
+        }
+        .bot-message {
+            background-color: #000080;
+            display: inline-block;
+            padding: 8px;
+            border-radius: 10px;
+            margin-bottom: 8px;
+            opacity: 0;
+            animation: fadeIn 0.2s ease-out forwards;
+        }
+        .bot-message, .bot-label {
+            color: white;
+        }
+        @keyframes fadeIn {
+            0% {
+                opacity: 0;
+            }
+            100% {
+                opacity: 1;
+            }
+        }
+        img.icon {
+            width: 24px;
+            height: 24px;
+            margin-right: 4px;
+            vertical-align: middle;
+        }
+    </style>
+    <script>
+        function scrollToBottom() {
+            window.scrollTo(0, document.body.scrollHeight);
+        }
+    </script>
+</head>
+<body onload="scrollToBottom()">
+    <h1>Chat</h1>
+    <ul>
+        {% for message, response, is_image, is_image_output in messages %}
+        <li class="message-row">
+            {% if not is_image_output %}
+                <img src="{{ url_for('static', filename='user_icon.png') }}" class="icon" alt="User Icon">
+                <span class="user-message">
+                    <strong>You:</strong> {{ message }}
+                </span>
+            {% endif %}
+            <br>
+            <img src="{{ url_for('static', filename='bot_icon.png') }}" class="icon" alt="Bot Icon">
+            <span class="bot-message">
+            <strong class="bot-label">Bot:</strong>
+                {% if is_image %}
+                    <img src="data:image/png;base64,{{ response }}" />
+                {% else %}
+                    {{ response }}
+                {% endif %}
+            </span>
+        </li>
+        {% endfor %}
+    </ul>
+    <hr>
+    <form action="/" method="post" onsubmit="scrollToBottom()" style="float: right;">
+        <input type="text" name="message">
+        <input type="submit" value="Send">
+    </form>
+</body>
+</html>
