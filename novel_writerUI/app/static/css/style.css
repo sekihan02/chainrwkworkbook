@@ -1,0 +1,18 @@
+body.light-theme {
+    color: #000000;
+    background-color: #ffffff;
+}
+
+body.light-theme h1 {
+    color: #000000;
+}
+
+#theme-switcher {
+    transition: all 0.3s ease;
+}
+
+body.light-theme #theme-switcher {
+    background-color: #DFDFDF !important;
+    color: #454545 !important;
+    border-color: #454545 !important;
+}
