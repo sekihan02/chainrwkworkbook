@@ -29,7 +29,7 @@
     Requirement already satisfied: certifi>=2017.4.17 in /usr/local/lib/python3.10/dist-packages (from requests==2.31.0->arxiv==2.1.0) (2022.12.7)
     [33mWARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv[0m[33m
     [0mRequirement already satisfied: python-dotenv in /usr/local/lib/python3.10/dist-packages (1.0.1)
-    Requirement already satisfied: tiktoken in /usr/local/lib/python3.10/dist-packages (0.5.2)
+    Requirement already satisfied: tiktoken in /usr/local/lib/python3.10/dist-packages (0.6.0)
     Requirement already satisfied: regex>=2022.1.18 in /usr/local/lib/python3.10/dist-packages (from tiktoken) (2023.12.25)
     Requirement already satisfied: requests>=2.26.0 in /usr/local/lib/python3.10/dist-packages (from tiktoken) (2.31.0)
     Requirement already satisfied: charset-normalizer<4,>=2 in /usr/local/lib/python3.10/dist-packages (from requests>=2.26.0->tiktoken) (2.1.1)
@@ -155,7 +155,7 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 ```python
 MODEL_NAME = "gpt-3.5-turbo-0125"
 # MODEL_NAME = "gpt-3.5-turbo-instruct"
-# MODEL_NAME = "gpt-4-0125-previe"
+# MODEL_NAME = "gpt-4-0125-preview"
 TEMPERATURE = 0.7
 # OpenAIクライアントの初期化
 client = OpenAI()
@@ -284,7 +284,7 @@ def create_team_supervisor(
 
 ```python
 # テキスト検索用の関数
-def search_text(keywords, region='wt-wt', safesearch='moderate', timelimit=None, max_results=5):
+def search_text(keywords, region='wt-wt', safesearch='moderate', timelimit=None, max_results=10):
     with DDGS() as ddgs:
         results = [r for r in ddgs.text(keywords, region=region, safesearch=safesearch, timelimit=timelimit, max_results=max_results)]
     return results
@@ -765,189 +765,185 @@ def search_agent_1cycle(
 
 
 ```python
+def research_agent(
+    question:str,
+):
+    query = question
+    search_res = search_agent_1cycle(question, query)
+
+    print(f"検索結果を要約した回答: {search_res['output']}")
+    print(f"質問と回答の整合性チェック: {search_res['qa_result']['output']}")
+
+    # カウント用変数の初期化
+    research_cnt = 0
+    # outputが'Not Acceptable'である間、処理を繰り返す
+    while search_res['qa_result']['output']  == 'Not Acceptable':
+        print("-"*50)
+        with Timer(prefix=f'Number of re-researches {research_cnt+1} :'):
+            # カウントアップ
+            research_cnt += 1
+            # カウントが3に達したらループを強制終了
+            if research_cnt == 3:
+                print("実行回数が3に達したため、処理を終了します。")
+                break
+            # 再検索用のクエリ生成
+            re_query = make_re_search_query(
+                MODEL_NAME,
+                question,
+                query
+            )
+            # 
+            query = re_query['output']
+            print(f"再検索クエリ: {query}")
+
+            search_res = search_agent_1cycle(question, query)
+
+            print(f"検索結果を要約した回答: {search_res['output']}")
+            print(f"質問と回答の整合性チェック: {search_res['qa_result']['output']}")
+        print("-"*50)
+    return {
+        "final_qa": search_res['qa_result']['output'],
+        "final_query": query,
+        "search_output": search_res['output']
+    }
+```
+
+
+```python
+def get_summary_of_search_results(question, search_res):
+    print("-"*50)
+    print(f"質問: {question}")
+    print("-"*50)
+    print(f"検索に使用したクエリ:\n {research_res['final_query']}")
+    print(f"検索結果を要約した最終回答:\n {research_res['search_output']}")
+    print(f"最終判定結果: {research_res['final_qa']}")
+    print("-"*50)
+    print(f"使用モデル: {MODEL_NAME}")
+```
+
+
+```python
 question = """2024年に注目されている最新のテクノロジートレンドは何ですか？
 また、それらのトレンドが社会にどのような影響を与えると予想されますか？"""
-
-query = question
-search_res = search_agent_1cycle(question, query)
-
-print(f"検索結果を要約した回答: {search_res['output']}")
-print(f"質問と回答の整合性チェック: {search_res['qa_result']['output']}")
-
-# カウント用変数の初期化
-research_cnt = 0
-# outputが'Not Acceptable'である間、処理を繰り返す
-while search_res['qa_result']['output']  == 'Not Acceptable':
-    print("-"*50)
-    with Timer(prefix=f'Number of re-researches {research_cnt} :'):
-        # カウントアップ
-        research_cnt += 1
-        # カウントが3に達したらループを強制終了
-        if research_cnt == 3:
-            print("実行回数が3に達したため、処理を終了します。")
-            break
-        # 再検索用のクエリ生成
-        re_query = make_re_search_query(
-            MODEL_NAME,
-            question,
-            query
-        )
-        # 
-        query = re_query['output']
-        print(f"再検索クエリ: {query}")
-        
-        search_res = search_agent_1cycle(question, query)
-
-        print(f"検索結果を要約した回答: {search_res['output']}")
-        print(f"質問と回答の整合性チェック: {search_res['qa_result']['output']}")
-    print("-"*50)
-# ループを抜けた後、最終的な結果を表示
-print(f"検索結果を要約した最終回答: {search_res['output']}")
+with Timer(prefix=f'Handle all time by research.'):
+    research_res = research_agent(question)
 ```
 
     検索結果を要約した回答: 2024年の戦略的テクノロジのトップ・トレンドは、「投資の保護」 (既存および将来の投資を保護／保全する)、「ビルダーの台頭」 (適切なステークホルダー向けに、適切なソリューションを、適切なタイミングで構築する)、「価値のデリバー」 (社内外の顧客の環境変化に応じて価値を提供する) という3つの包括的なビジネス・テーマの1つまたは複数に関連します。
     質問と回答の整合性チェック: Not Acceptable
     --------------------------------------------------
-    再検索クエリ: 2024年, 注目, 最新, テクノロジートレンド, 予想, 社会への影響
+    再検索クエリ: 2024年, 最新テクノロジートレンド, 注目, 社会, 予想, 影響
     検索結果を要約した回答: 2024年の戦略的テクノロジのトップ・トレンドは、「投資の保護」 (既存および将来の投資を保護／保全する)、「ビルダーの台頭」 (適切なステークホルダー向けに、適切なソリューションを、適切なタイミングで構築する)、「価値のデリバー」 (社内外の顧客の環境変化に応じて価値を提供する) という3つの包括的なビジネス・テーマの1つまたは複数に関連します。
     質問と回答の整合性チェック: Not Acceptable
-    Number of re-researches 0 : 6.742[s]
+    Number of re-researches 1 : 6.386[s]
     --------------------------------------------------
     --------------------------------------------------
-    再検索クエリ: 2024年, 注目, 最新, テクノロジートレンド, 社会, 影響, 予想
-    検索結果を要約した回答: 2024年に注目すべき10のテクノロジーを紹介しよう。MITテクノロジーレビューの年次企画「ブレークスルー・テクノロジー10」は、人工知能、生物工学、気候変動、コンピューティングなどの技術的進歩を評価。2024年の戦略的テクノロジのトップトレンドは、「投資の保護」「ビルダーの台頭」「価値のデリバー」の3つのビジネステーマ。AIを搭載したチャットボットなど、人間性を組み込むテクノロジーの重要性。2024年の「世界を変える10大技術」から漏れた5つの候補も紹介。
+    再検索クエリ: 2024年, 最新テクノロジートレンド, 注目, 社会, 影響, 予想
+    検索結果を要約した回答: 2024年の戦略的テクノロジのトップ・トレンドは、「投資の保護」 (既存および将来の投資を保護／保全する)、「ビルダーの台頭」 (適切なステークホルダー向けに、適切なソリューションを、適切なタイミングで構築する)、「価値のデリバー」 (社内外の顧客の環境変化に応じて価値を提供する) という3つの包括的なビジネス・テーマの1つまたは複数に関連します。
     質問と回答の整合性チェック: Acceptable
-    Number of re-researches 1 : 20.837[s]
+    Number of re-researches 2 : 8.304[s]
     --------------------------------------------------
-    検索結果を要約した最終回答: 2024年に注目すべき10のテクノロジーを紹介しよう。MITテクノロジーレビューの年次企画「ブレークスルー・テクノロジー10」は、人工知能、生物工学、気候変動、コンピューティングなどの技術的進歩を評価。2024年の戦略的テクノロジのトップトレンドは、「投資の保護」「ビルダーの台頭」「価値のデリバー」の3つのビジネステーマ。AIを搭載したチャットボットなど、人間性を組み込むテクノロジーの重要性。2024年の「世界を変える10大技術」から漏れた5つの候補も紹介。
+    Handle all time by research. 20.782[s]
 
 
 
 ```python
+get_summary_of_search_results(question, research_res)
+```
+
+    --------------------------------------------------
+    質問: 2024年に注目されている最新のテクノロジートレンドは何ですか？
+    また、それらのトレンドが社会にどのような影響を与えると予想されますか？
+    --------------------------------------------------
+    検索に使用したクエリ:
+     2024年, 最新テクノロジートレンド, 注目, 社会, 影響, 予想
+    検索結果を要約した最終回答:
+     2024年の戦略的テクノロジのトップ・トレンドは、「投資の保護」 (既存および将来の投資を保護／保全する)、「ビルダーの台頭」 (適切なステークホルダー向けに、適切なソリューションを、適切なタイミングで構築する)、「価値のデリバー」 (社内外の顧客の環境変化に応じて価値を提供する) という3つの包括的なビジネス・テーマの1つまたは複数に関連します。
+    最終判定結果: Acceptable
+    --------------------------------------------------
+    使用モデル: gpt-3.5-turbo-0125
+
+
+
+```python
+MODEL_NAME = "gpt-4-0125-preview"
+
 question = """世界の異なる国々で行われているユニークな新年の祝い方を3つ挙げ、
 それぞれの文化的背景を説明してください。"""
 
-query = question
-search_res = search_agent_1cycle(question, query)
-
-print(f"検索結果を要約した回答: {search_res['output']}")
-print(f"質問と回答の整合性チェック: {search_res['qa_result']['output']}")
-
-# カウント用変数の初期化
-research_cnt = 0
-# outputが'Not Acceptable'である間、処理を繰り返す
-while search_res['qa_result']['output']  == 'Not Acceptable':
-    print("-"*50)
-    with Timer(prefix=f'Number of re-researches {research_cnt} :'):
-        # カウントアップ
-        research_cnt += 1
-        # カウントが3に達したらループを強制終了
-        if research_cnt == 3:
-            print("実行回数が3に達したため、処理を終了します。")
-            break
-        # 再検索用のクエリ生成
-        re_query = make_re_search_query(
-            MODEL_NAME,
-            question,
-            query
-        )
-        # 
-        query = re_query['output']
-        print(f"再検索クエリ: {query}")
-        
-        search_res = search_agent_1cycle(question, query)
-
-        print(f"検索結果を要約した回答: {search_res['output']}")
-        print(f"質問と回答の整合性チェック: {search_res['qa_result']['output']}")
-    print("-"*50)
-# ループを抜けた後、最終的な結果を表示
-print(f"検索結果を要約した最終回答: {search_res['output']}")
+with Timer(prefix=f'Handle all time by research.'):
+    research_res = research_agent(question)
 ```
 
-    検索結果を要約した回答: 大晦日をどこにいても心配事を忘れ、新鮮に始める機会であり、伝統的な大晦日料理を食べる機会があること。世界各地のお祝い方法が紹介されており、各国の独自の新年の祝い方や風習が紹介されている。
-    質問と回答の整合性チェック: Not Acceptable
-    --------------------------------------------------
-    再検索クエリ: New Year traditions, different countries, cultural background, celebrations
-    検索結果を要約した回答: Nowruz, meaning 'new day' in Farsi, is a celebration that starts on the spring equinox to honor the renewal of nature. It marks the beginning of the first month in the Iranian solar calendar and usually falls around March 21st on the Gregorian calendar.
+    検索結果を要約した回答: このブログ記事では、日本、中国、アメリカ、インド、ブラジル、ロシア、スペインの7カ国の新年の祝い方について探究しています。グレゴリオ暦に基づく日本のお正月や、各国のユニークな新年の祝い方、例えばスイスではアイスクリームを床に落とす、ギリシャではザクロを玄関に投げる、コロンビアではスーツケースを持って走るなどの風習が紹介されています。また、中国では春節が旧正月として祝われることや、その他多くの国々で独自の新年の祝い方があることが紹介されています。
     質問と回答の整合性チェック: Acceptable
-    Number of re-researches 0 : 4.546[s]
-    --------------------------------------------------
-    検索結果を要約した最終回答: Nowruz, meaning 'new day' in Farsi, is a celebration that starts on the spring equinox to honor the renewal of nature. It marks the beginning of the first month in the Iranian solar calendar and usually falls around March 21st on the Gregorian calendar.
+    Handle all time by research. 10.019[s]
 
 
 
 ```python
+get_summary_of_search_results(question, research_res)
+```
+
+    --------------------------------------------------
+    質問: 世界の異なる国々で行われているユニークな新年の祝い方を3つ挙げ、
+    それぞれの文化的背景を説明してください。
+    --------------------------------------------------
+    検索に使用したクエリ:
+     世界の異なる国々で行われているユニークな新年の祝い方を3つ挙げ、
+    それぞれの文化的背景を説明してください。
+    検索結果を要約した最終回答:
+     このブログ記事では、日本、中国、アメリカ、インド、ブラジル、ロシア、スペインの7カ国の新年の祝い方について探究しています。グレゴリオ暦に基づく日本のお正月や、各国のユニークな新年の祝い方、例えばスイスではアイスクリームを床に落とす、ギリシャではザクロを玄関に投げる、コロンビアではスーツケースを持って走るなどの風習が紹介されています。また、中国では春節が旧正月として祝われることや、その他多くの国々で独自の新年の祝い方があることが紹介されています。
+    最終判定結果: Acceptable
+    --------------------------------------------------
+    使用モデル: gpt-4-0125-preview
+
+
+
+```python
+MODEL_NAME = "gpt-4-0125-preview"
+
 question = """最近の世界経済の動向を分析し、今後の市場で注目すべき3つの産業を予測してください。それぞれの産業が注目される理由も含めて説明してください。"""
 
-query = question
-search_res = search_agent_1cycle(question, query)
-
-print(f"検索結果を要約した回答: {search_res['output']}")
-print(f"質問と回答の整合性チェック: {search_res['qa_result']['output']}")
-
-# カウント用変数の初期化
-research_cnt = 0
-# outputが'Not Acceptable'である間、処理を繰り返す
-while search_res['qa_result']['output']  == 'Not Acceptable':
-    print("-"*50)
-    with Timer(prefix=f'Number of re-researches {research_cnt}: '):
-        # カウントアップ
-        research_cnt += 1
-        # カウントが 3 に達したらループを強制終了
-        if research_cnt == 3:
-            print("実行回数が3に達したため、処理を終了します。")
-            break
-        # 再検索用のクエリ生成
-        re_query = make_re_search_query(
-            MODEL_NAME,
-            question,
-            query
-        )
-        # 
-        query = re_query['output']
-        print(f"再検索クエリ: {query}")
-        
-        search_res = search_agent_1cycle(question, query)
-
-        print(f"検索結果を要約した回答: {search_res['output']}")
-        print(f"質問と回答の整合性チェック: {search_res['qa_result']['output']}")
+with Timer(prefix=f'Handle all time by research.'):
+    research_res = research_agent(question)
 ```
 
-    検索結果を要約した回答: 世界の総合インフレ率は2024年に5.8%へ、2025年に4.4%へと鈍化する見込みで、2025年の予測は下方改定された。 ディスインフレと着実な成長に伴い、ハードランディング（強行着陸）となる可能性が低下し、世界経済成長に対するリスクは概ね均衡がとれている。 上振れリスクとしては、ディスインフレの加速が金融環境のさらなる緩和につながる可能性がある。 財政政策を必要以上に、また予測における想定以上に緩和すれば一時的により高い成長を実現し得るが、その後の調整コストが増大するリスクがある。 構造改革の勢いが強まれば、生産性が上がり、国境を越えてプラスの波及効果が見られる可能性がある。 IMFによる2022年の世界のGDP成長率予測は、ロシアによるウクライナ侵略やインフレなど、様々な要因の今後の動向を考慮して、2022年内に累次にわたる下方修正がなされている。 など
+    検索結果を要約した回答: 2024年には世界の総合インフレ率が5.8%へと減速し、2025年にはさらに4.4%へと鈍化する見込みである。この予測は以前より下方修正されており、ディスインフレと着実な経済成長に伴い、世界経済がハードランディングを避ける可能性が高まっている。しかし、財政政策の過度な緩和や構造改革の加速が新たなリスクを生じさせる可能性も指摘されている。一方で、IMFは2022年の世界のGDP成長率予測を複数回にわたり下方修正しており、ロシアのウクライナ侵攻やインフレの影響が反映されている。中国経済はゼロコロナ政策の解除後も回復が緩慢で、雇用や住宅市場の低迷が背景にある。全体として、世界経済は減速傾向にあり、インフレ抑制と経済成長のバランスを取ることが今後の課題となっている。
     質問と回答の整合性チェック: Not Acceptable
     --------------------------------------------------
-    再検索クエリ: recent world economic trends analysis, predict 3 industries to focus on future market, reasons for interest in each industry
-    検索結果を要約した回答: Real GDP growth is expected to be around 1% in 2024, and to average only 1.4% per year from 2024 through 2026. This does not compare well with the International Monetary Fund's 4% projection for emerging and developing economies, and even falls below the outlook for advanced economies of 1.7%.
+    再検索クエリ: 世界経済, 動向, 市場, 注目, 産業, 予測, 理由, 解説
+    検索結果を要約した回答: IMFの2022年の世界経済成長率予測は、ロシアのウクライナ侵略やインフレの影響を受けて下方修正され、2022年は3.6％に。2024年の成長率は2.4％と予想され、3年連続での減速が見込まれる。中東紛争の影響などで地政学的リスクが高まっている。2022年のインフレ率は先進国が5.7％、新興国が8.7％に上方修正された。新興国と発展途上国の成長率は2022年が4.6％、2023年が4.4％と予測され、パンデミック前のトレンドを下回る。2022年から2024年の間に先進国の成長率は減速し、新興市場国と発展途上国の成長率も鈍化する見込み。ナイジェリア、コロンビア、ポーランドは高成長が期待される経済大国として注目されている。
     質問と回答の整合性チェック: Not Acceptable
-    Number of re-researches 0:  5.042[s]
+    Number of re-researches 1 : 37.229[s]
     --------------------------------------------------
-    再検索クエリ: 世界経済の動向、市場予測、注目産業、予測、理由
-    検索結果を要約した回答: 世界経済の成長率予測に関する報告書が、世界経済の成長率予測や主要国の動向、金融引締めの影響、中国経済の回復遅れなどについてまとめられています。成長率は2024年が3.1%、2025年が3.2%と予測されており、新興市場と開発途上国が主なけん引役となる見込みです。また、米欧経済の金融引き締めによる減速や中国経済の回復遅れが注目されています。
+    --------------------------------------------------
+    再検索クエリ: 世界経済, 動向, 分析, 市場, 注目, 産業, 予測, 理由, 説明
+    検索結果を要約した回答: {'IMF_2022年GDP成長率予測': 'IMFによると、2022年の世界のGDP成長率予測は、ロシアによるウクライナ侵略やインフレなどの影響で、2022年内に累次にわたり下方修正されている。当初は4.4%の成長が見込まれていたが、4月の時点で3.6%へと下方修正された。', '世界経済の成長率予測': '2022年の世界経済成長率は3.5%で、2023年と2024年はそれぞれ3.0%と予測されている。インフレ対策のための金融政策の引き締めが経済活動の重しとなっており、総合インフレ率は2022年の8.7%から2024年には5.2%へと減少する見込みである。', 'グローバル経済と主要産業の動向': '2023年12月のグローバル経済動向報告によると、鉄鋼、オイル・ガス、石油化学、紙パルプ、医薬品、食品、電子部品・半導体、家電、不動産、アパレルなど主要産業の分析が行われている。', '2024年世界経済成長率予測': '2024年の世界経済成長率は2.4%と予測され、3年連続の減速が見込まれている。金融政策の引き締め、制約的な与信状況、貿易と投資の世界的な低迷が成長を抑制するとされている。', '先進国と新興国の成長率差': '先進国の成長率は2021年の5%から、2022年は3.8%、2023年には2.3%と減速する見込みである。一方、新興国・途上国の成長率は、2021年の6.3%から、2022年は4.6%、2023年には4.4%と予測されている。', '世界経済見通し': '2022年4月の世界経済見通しによると、ウクライナでの戦争が経済回復を抑制し、世界経済成長率は2021年の6.1%から2022年と2023年は3.6%に減速する見込みである。', '世界経済の動向': '2021年は新型コロナウイルスへの対応が進展し、世界経済が回復してきた一年であった。2020年初のコロナショック後、政府の支援により世界経済は力強く回復した。', '長期経済成長予測': '世界経済は2016年から2050年までに年平均実質成長率約2.5%で成長し、経済規模が2042年までに倍増すると予想されている。新興市場と開発途上国が主な成長のけん引役となる。'}
     質問と回答の整合性チェック: Not Acceptable
-    Number of re-researches 1:  6.088[s]
+    Number of re-researches 2 : 66.893[s]
+    --------------------------------------------------
     --------------------------------------------------
     実行回数が3に達したため、処理を終了します。
-    Number of re-researches 2:  0.000[s]
+    Number of re-researches 3 : 0.000[s]
+    Handle all time by research. 123.149[s]
 
 
 
 ```python
-print(f"質問: {question}")
-print(f"検索に使用したクエリ: {query}")
-print(f"検索結果を要約した最終回答: {search_res['output']}")
+get_summary_of_search_results(question, research_res)
 ```
 
+    --------------------------------------------------
     質問: 最近の世界経済の動向を分析し、今後の市場で注目すべき3つの産業を予測してください。それぞれの産業が注目される理由も含めて説明してください。
-    検索に使用したクエリ: 世界経済の動向、市場予測、注目産業、予測、理由
-    検索結果を要約した最終回答: 世界経済の成長率予測に関する報告書が、世界経済の成長率予測や主要国の動向、金融引締めの影響、中国経済の回復遅れなどについてまとめられています。成長率は2024年が3.1%、2025年が3.2%と予測されており、新興市場と開発途上国が主なけん引役となる見込みです。また、米欧経済の金融引き締めによる減速や中国経済の回復遅れが注目されています。
-
-
-
-```python
-print(f"使用モデル: {MODEL_NAME}")
-```
-
-    使用モデル: gpt-3.5-turbo-0125
+    --------------------------------------------------
+    検索に使用したクエリ:
+     世界経済, 動向, 分析, 市場, 注目, 産業, 予測, 理由, 説明
+    検索結果を要約した最終回答:
+     {'IMF_2022年GDP成長率予測': 'IMFによると、2022年の世界のGDP成長率予測は、ロシアによるウクライナ侵略やインフレなどの影響で、2022年内に累次にわたり下方修正されている。当初は4.4%の成長が見込まれていたが、4月の時点で3.6%へと下方修正された。', '世界経済の成長率予測': '2022年の世界経済成長率は3.5%で、2023年と2024年はそれぞれ3.0%と予測されている。インフレ対策のための金融政策の引き締めが経済活動の重しとなっており、総合インフレ率は2022年の8.7%から2024年には5.2%へと減少する見込みである。', 'グローバル経済と主要産業の動向': '2023年12月のグローバル経済動向報告によると、鉄鋼、オイル・ガス、石油化学、紙パルプ、医薬品、食品、電子部品・半導体、家電、不動産、アパレルなど主要産業の分析が行われている。', '2024年世界経済成長率予測': '2024年の世界経済成長率は2.4%と予測され、3年連続の減速が見込まれている。金融政策の引き締め、制約的な与信状況、貿易と投資の世界的な低迷が成長を抑制するとされている。', '先進国と新興国の成長率差': '先進国の成長率は2021年の5%から、2022年は3.8%、2023年には2.3%と減速する見込みである。一方、新興国・途上国の成長率は、2021年の6.3%から、2022年は4.6%、2023年には4.4%と予測されている。', '世界経済見通し': '2022年4月の世界経済見通しによると、ウクライナでの戦争が経済回復を抑制し、世界経済成長率は2021年の6.1%から2022年と2023年は3.6%に減速する見込みである。', '世界経済の動向': '2021年は新型コロナウイルスへの対応が進展し、世界経済が回復してきた一年であった。2020年初のコロナショック後、政府の支援により世界経済は力強く回復した。', '長期経済成長予測': '世界経済は2016年から2050年までに年平均実質成長率約2.5%で成長し、経済規模が2042年までに倍増すると予想されている。新興市場と開発途上国が主な成長のけん引役となる。'}
+    最終判定結果: Not Acceptable
+    --------------------------------------------------
+    使用モデル: gpt-4-0125-preview
 
 
 
